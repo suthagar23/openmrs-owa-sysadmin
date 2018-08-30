@@ -7,6 +7,17 @@
         word-wrap: break-word;
     }
 
+    .module-search-box {
+        width: 100%;
+        color: #363463;
+        display: block;
+        padding: 5px 10px;
+        margin: 0;
+        margin-top: 5px;
+        margin-bottom: 10px;
+        background-color: #FFF;
+        border: 1px solid #dddddd;
+    }
     /*style="word-wrap:break-word"*/
 </style>
 
@@ -82,21 +93,29 @@
                 </a>
 
             </div>
+            
+            <div class="col-12">
+                <input class="module-search-box" type="text" name="search" placeholder="Search Modules.." ng-model="moduleSearchText"
+                       ng-change="moduleNameSearch()"/>
+            </div>
 
+            <div class="alert alert-info" ng-if="AllModuleViewData.length == 0" style="text-align:center;">
+                No module found.
+            </div>
 
-            <table class="layout display responsive-table">
+            <table class="layout display responsive-table" ng-if="AllModuleViewData.length > 0">
                 <tbody>
                 <tr>
-                    <th style="max-width: 40px;"> Status</th>
+                    <th style="min-width: 40px;"> Status</th>
                     <th> Name</th>
                     <th> Author</th>
-                    <th style="max-width: 60px;"> Version</th>
+                    <th style="min-width: 60px;"> Version</th>
                     <th> Description</th>
-                    <th style="min-width: 180px;"> Actions</th>
+                    <th style="min-width: 190px;"> Actions</th>
                 </tr>
 
                 <tr ng-repeat="class in AllModuleViewData">
-                    <td valign="top" style="max-width: 30px;">
+                    <td valign="top" style="max-width: 30px; text-align: center;">
                         <img src="img/running-module.png" ng-if="class.started == true" height="20"
                              style="top: 5px;left: auto;"/>
                         <img src="img/stopped-module.png" ng-if="class.started != true" height="20"
@@ -157,7 +176,7 @@
                     </ul>
                 </div>
                 <div class="modal-footer">
-                    <button class=" btn-danger"
+                    <button class="btn btn-danger"
                             ng-click="unloadModule(uploadConfirmModuleData.uuid, uploadConfirmModuleData.moduleDisplayName)"
                             data-dismiss="modal"><i class="icon-ok"></i> Yes
                     </button>
@@ -195,7 +214,7 @@
                     </ul>
                 </div>
                 <div class="modal-footer">
-                    <button class=" btn-danger"
+                    <button class="btn btn-danger"
                             ng-click="StopModule(stopConfirmModuleData.uuid,'ALLMODULES', stopConfirmModuleData.moduleDisplayName)"
                             data-dismiss="modal"><i class="icon-ok"> </i> Yes
                     </button>

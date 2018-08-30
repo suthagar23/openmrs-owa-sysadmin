@@ -2,14 +2,17 @@ var manageModuleController = angular.module('manageModuleController', ['OWARoute
 
 
 manageModuleController.controller('ModuleListCtrl',
-    ['$scope', '$location', '$route', '$routeParams', 'OWARoutesUtil', '$http', '$rootScope', 'ModuleService', 'logger',
-        function ($scope, $location, $route, $routeParams, OWARoutesUtil, $http, $rootScope, ModuleService, logger) {
+    ['$scope', '$location', '$route', '$routeParams', 'OWARoutesUtil', '$http', '$rootScope', 'ModuleService', 'logger', '$rootScope',
+        function ($scope, $location, $route, $routeParams, OWARoutesUtil, $http, $rootScope, ModuleService, logger, $rootScope) {
 
             // OpenMRS breadcrumbs
             $rootScope.$emit("updateBreadCrumb", {breadcrumbs: [["SysAdmin", "#"], ["Modules", ""]]});
 
             //holds objects of selected checkboxes
             $scope.selected = {};
+            $scope.moduleSearchText = null;
+            // used to store the modules list
+            var moduleListResults = [];
 
             function showLoadingPopUp() {
                 $('#loadingModal').show();
@@ -60,74 +63,67 @@ manageModuleController.controller('ModuleListCtrl',
                 }
             }
 
-            $scope.updateModule = function (moduleUrl) {
-                console.log("update Module");
-                // Remove the notification about Update
-                if (typeof($scope.moduleUpdateURL) != undefined) {
-                    delete $scope.moduleUpdateURL;
+            $scope.moduleNameSearch = function () {
+                var searchedModuleData = []
+                var searchText = $scope.moduleSearchText.toLowerCase();
+                // search from display name, description, and authors name
+                for(module in moduleListResults) {
+                    if(moduleListResults[module]["display"].toLowerCase().indexOf(searchText) !== -1) {
+                        searchedModuleData.push(moduleListResults[module]);
+                    }
+                    else if(moduleListResults[module]["description"].toLowerCase().indexOf(searchText) !== -1) {
+                        searchedModuleData.push(moduleListResults[module]);
+                    }
+                    else if(moduleListResults[module]["author"].toLowerCase().indexOf(searchText) !== -1) {
+                        searchedModuleData.push(moduleListResults[module]);
+                    }
                 }
-                $scope.moduleNewUpdateFound = "0"; // working or disabled
-                alertsClear(); // clear all alerts $scope variables
-                showLoadingPopUp(); // Show loadingPop to prevent other Actions
-                $scope.isDownloading = true;
-                var response = ModuleService.uploadModules(moduleUrl);
-                response.then(function (result) {
-                    responseType = result[0]; //UPLOAD or DOWNLOAD
-                    responseValue = result[1]; // 1- success | 0 - fail
-                    responseData = result[2];
-                    responseStatus = result[3];
+                $scope.AllModuleViewData = searchedModuleData;
+            }
 
-                    if (responseType == "UPLOAD") {
-                        $scope.isDownloading = false;
-                        $scope.downloadSuccessMsg = "Module Download Completed";
-                        if (responseValue == 1) {
-                            $scope.isUploading = false;
-                            var x2js = new X2JS();
-                            var JsonSuccessResponse = x2js.xml_str2json(responseData);
-                            var moduleName = JsonSuccessResponse["org.openmrs.module.Module"].name;
-                            uplodedsuccessMsg = moduleName + " has been loaded"
-                            responseJsonData = JsonSuccessResponse;
-                            if (typeof(JsonSuccessResponse["org.openmrs.module.Module"].startupErrorMessage) == "undefined") {
-                                // Started Successfully
-                                $scope.startupsuccessMsg = moduleName + " has been loaded and started Successfully"
-                                $scope.checkAllModulesForUpdate();
+            $scope.updateModule = function(moduleUuid, moduleDownloadURL) {
+                $scope.isDownloading = true;
+                alertsClear();
+                showLoadingPopUp();
+                var uploadUrl = OWARoutesUtil.getOpenmrsUrl() + "/ws/rest/v1/moduleaction";
+                moduleData = {  "modules":[moduleUuid],
+                                "action":"install",
+                                "installUri": moduleDownloadURL
                             }
-                            else {
-                                //start up Error Found
-                                $scope.startuperrorMsg = "Could not start " + moduleName + " Module."
-                                logger.error($scope.startuperrorMsg);
-                            }
-                            hideLoadingPopUp();
+                $http.post(uploadUrl, moduleData, {
+                    headers: {
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+                    }
+                }).success(function (data, status, headers, config) {
+                    $scope.isUploading = false;
+                    $scope.isDownloading = false;
+                    hideLoadingPopUp();
+                    $scope.startupsuccessMsg = moduleName + " has been loaded and started Successfully";
+                    $scope.checkAllModulesForUpdate();
+                    
+                }).error(function (data, status, headers, config) {
+                    $scope.isDownloading = false;
+                    var x2js = new X2JS();
+                    var JsonSuccessResponse = x2js.xml_str2json(data);
+                     
+                    if (typeof(JsonSuccessResponse["org.openmrs.module.webservices.rest.SimpleObject"].map.string) != "undefined") {
+                        // File Error Catched
+                        if (typeof(JsonSuccessResponse["org.openmrs.module.webservices.rest.SimpleObject"].map["linked-hash-map"].entry[0].string[1]) != "undefined") {
+                            // Error Message given
+                            $scope.downloadErrorMsg = JsonSuccessResponse["org.openmrs.module.webservices.rest.SimpleObject"].map["linked-hash-map"].entry[0].string[1];
                         }
                         else {
-                            $scope.isUploading = false;
-                            var x2js = new X2JS();
-                            var JsonErrorResponse = x2js.xml_str2json(responseData);
-                            if (typeof(JsonErrorResponse["org.openmrs.module.webservices.rest.SimpleObject"].map.string) != "undefined") {
-                                // File Error Catched
-                                if (typeof(JsonErrorResponse["org.openmrs.module.webservices.rest.SimpleObject"].map["linked-hash-map"].entry[0].string[1]) != "undefined") {
-                                    // Error Message given
-                                    $scope.uploadederrorMsg = JsonErrorResponse["org.openmrs.module.webservices.rest.SimpleObject"].map["linked-hash-map"].entry[0].string[1];
-                                }
-                                else {
-                                    // Unknown Error Message
-                                    $scope.uploadederrorMsg = "Error loading module, no config.xml file found"
-                                }
-                            }
-                            else {
-                                //unknown Error
-                                $scope.uploadederrorMsg = "Error loading module!"
-                            }
-                            hideLoadingPopUp();
-                            logger.error($scope.uploadederrorMsg, responseData);
+                            // Unknown Error Message
+                            $scope.downloadErrorMsg = "Action failed, Could not download and load the " + moduleUuid + " module!"
                         }
                     }
                     else {
-                        $scope.isDownloading = false;
-                        $scope.downloadErrorMsg = "Could not download the Module";
-                        hideLoadingPopUp();
-                        logger.error($scope.downloadErrorMsg, responseData);
+                        //unknown Error
+                        $scope.downloadErrorMsg = "Action failed, Could not  download and load  the " + moduleUuid + " module!"
                     }
+                    
+                    hideLoadingPopUp();
+                    logger.error($scope.downloadErrorMsg, data);
                 });
             }
 
@@ -425,12 +421,8 @@ manageModuleController.controller('ModuleListCtrl',
                 });
             }
 
-            $scope.getDependentModuleListonCurrentModule = function (packagename) {
-                //var packagename="org.openmrs.module.uiframework";
-                if (typeof($scope.DependentModuleList) != undefined) {
-                    delete $scope.DependentModuleList;
-                }
-                var Modulelist = [];
+            function buildModuleStructure_keyAsPackageName(callBack) {
+                moduleListResultsKeyAsPackageName = [];
                 var response = ModuleService.getAllModuleDetails();
                 response.then(function (result) {
                     responseType = result[0]; //UPLOAD or DOWNLOAD
@@ -439,18 +431,15 @@ manageModuleController.controller('ModuleListCtrl',
                     responseStatus = result[3];
                     if (responseType == "GET") {
                         if (responseValue == 1) {
-                            angular.forEach(responseData.results, function (value1, key1) {
-                                angular.forEach(value1.requiredModules, function (value2, key2) {
-                                    // console.log("2 - check : "+value1.packageName+" - "+value2);
-                                    if (packagename == value2) {
-                                        Modulelist.push([value1.name, value1.uuid]);
-                                    }
-                                });
-                            });
-                            $scope.DependentModuleList = Modulelist;
+                            moduleData = responseData.results;
+                            for (moduleIndex in moduleData) {
+                                moduleListResultsKeyAsPackageName[moduleData[moduleIndex]['packageName']] = moduleData[moduleIndex];
+                            }
+                            callBack(moduleListResultsKeyAsPackageName);
                         }
                         else {
-                            logger.error("Could not get the dependent module information", resultModule[2]);
+                            logger.error("Could not get all module information", responseData);
+                            callBack([]);
                         }
                     }
                 });
@@ -472,68 +461,97 @@ manageModuleController.controller('ModuleListCtrl',
                 if (typeof($scope.moduleViewRequiredModules) != undefined) {
                     delete $scope.moduleViewRequiredModules;
                 }
+                
+                if (typeof($rootScope.SEARCH_MODULE_DOWNLOADED_INSTALLED) != undefined) {
+                    $scope.SEARCH_MODULE_DOWNLOADED_INSTALLED = $rootScope.SEARCH_MODULE_DOWNLOADED_INSTALLED;
+                    delete $rootScope.SEARCH_MODULE_DOWNLOADED_INSTALLED;
+                }
+                
                 showLoadingPopUp();
 
-                var requestUrl = OWARoutesUtil.getOpenmrsUrl() + "/ws/rest/v1/module/" + $routeParams.classUUID;
-                $http.get(requestUrl, {params: {v: 'full'}})
-                    .success(function (data) { // GET REQUEST SUCCESS HANDLE
-                        $scope.requestModuleViewDetails = true;
-                        $scope.ModuleViewData = data;
+                buildModuleStructure_keyAsPackageName(function(moduleDataWithPackageNameKey) {
+                    var requestUrl = OWARoutesUtil.getOpenmrsUrl() + "/ws/rest/v1/module/" + $routeParams.classUUID;
+                    $http.get(requestUrl, {params: {v: 'full'}})
+                        .success(function (data) { // GET REQUEST SUCCESS HANDLE
+                            $scope.requestModuleViewDetails = true;
+                            $scope.ModuleViewData = data;
+                            var awareModuleDisplayNames = [];
+                            angular.forEach(data.awareOfModules, function (value, key) {
+                                moduleData = {};
+                                var awareModulePackageName = value.toString();
+                                var awareModuleUUID = awareModulePackageName.replace("org.openmrs.module.", "");
+                                moduleData["display"] = awareModuleUUID;
+                                moduleData["uuid"] = awareModuleUUID;
+                                moduleData["isInstalled"] = false;
+                                moduleData["isStarted"] = false;
+                                moduleData["message"] = "";    
+                                moduleData["version"] = "";
 
-                        var awareModuleDisplayNames = [];
-                        //console.log(data.awareOfModules);
-                        angular.forEach(data.awareOfModules, function (value, key) {
-                            //console.log(value);
-                            var awareModuleName = value.toString().replace("org.openmrs.module.", "");
-                            var responseAwareModule = ModuleService.getModuleDetails(awareModuleName);
-                            responseAwareModule.then(function (resultAwareModule) {
-                                if (resultAwareModule[0] == "GET") {
-                                    if (resultAwareModule[1] == 1) {
-                                        //  console.log(resultModule[2]);
-                                        //return resultModule[2].display;
-                                        awareModuleDisplayNames.push([resultAwareModule[2].display, resultAwareModule[2].uuid]);
-                                    } else {
-                                        awareModuleDisplayNames.push([awareModuleName, awareModuleName]);
-                                        logger.error("Could not get module information for - " + awareModuleName, resultAwareModule[2]);
-                                    }
-                                } else {
-                                    awareModuleDisplayNames.push([awareModuleName, awareModuleName]);
+                                if(awareModulePackageName in moduleDataWithPackageNameKey) {
+                                    moduleData["display"] = moduleDataWithPackageNameKey[awareModulePackageName].display;
+                                    moduleData["uuid"] = moduleDataWithPackageNameKey[awareModulePackageName].uuid;
+                                    moduleData["isInstalled"] = true;
+                                    moduleData["isStarted"] = moduleDataWithPackageNameKey[awareModulePackageName].started;
+                                    moduleData["version"] = moduleDataWithPackageNameKey[awareModulePackageName].version;
                                 }
-                                $scope.moduleViewAwareOfModules = {
-                                    "awareOfModules": awareModuleDisplayNames
+                                else {
+                                    moduleData["message"] = "Module isn't in the installed list for this server - " + awareModuleUUID;
+                                    logger.error(moduleData["message"]);
+                                }
+                                awareModuleDisplayNames.push(moduleData);
+                            });
+                            $scope.moduleViewAwareOfModules = {"awareModules" : awareModuleDisplayNames };
+
+                            var requiredModuleDisplayNames = [];
+                            angular.forEach(data.requiredModules, function (value, key) {
+                                moduleData = {};
+                                var requiredModulePackageName = value.toString();
+                                var requiredModuleUUID = requiredModulePackageName.replace("org.openmrs.module.", "");
+                                moduleData["display"] = requiredModuleUUID;
+                                moduleData["uuid"] = requiredModuleUUID;
+                                moduleData["isInstalled"] = false;
+                                moduleData["isStarted"] = false;
+                                moduleData["message"] = "";    
+                                moduleData["version"] = "";
+
+                                if(requiredModulePackageName in moduleDataWithPackageNameKey) {
+                                    moduleData["display"] = moduleDataWithPackageNameKey[requiredModulePackageName].display;
+                                    moduleData["uuid"] = moduleDataWithPackageNameKey[requiredModulePackageName].uuid;
+                                    moduleData["isInstalled"] = true;
+                                    moduleData["isStarted"] = moduleDataWithPackageNameKey[requiredModulePackageName].started;
+                                    moduleData["version"] = moduleDataWithPackageNameKey[requiredModulePackageName].version;
+                                }
+                                else {
+                                    moduleData["message"] = "Module isn't in the installed list for this server - " + requiredModuleUUID;
+                                    logger.error(moduleData["message"]);
+                                }
+                                requiredModuleDisplayNames.push(moduleData);
+                            });
+                            $scope.moduleViewRequiredModules = {"requiredModules" : requiredModuleDisplayNames };
+
+                            var dependentModuleDisplayNames = [];
+                            angular.forEach(moduleDataWithPackageNameKey, function (value1, key1) {
+                                if (data.packageName in key1.requiredModules) {
+                                    moduleData = {};
+                                    moduleData["display"] = key1.display;
+                                    moduleData["uuid"] = key1.uuid;
+                                    moduleData["isInstalled"] = false;
+                                    moduleData["isStarted"] = key1.started;
+                                    moduleData["message"] = "";    
+                                    moduleData["version"] = key1.version;
+
+                                    dependentModuleDisplayNames.push(moduleData);
                                 }
                             });
+                            $scope.moduleViewDependentModules = { "dependentModules" : dependentModuleDisplayNames };
+
+                            hideLoadingPopUp();
+                        })
+                        .error(function(data) {
+                            $scope.requestModuleViewDetails = false;
+                            hideLoadingPopUp();
+                            logger.error("Could not get module view details", data);
                         });
-
-                        var requiredModuleDisplayNames = [];
-                        angular.forEach(data.requiredModules, function (value, key) {
-
-                            var requiredModuleName = value.toString().replace("org.openmrs.module.", "");
-                            var responserequiredModule = ModuleService.getModuleDetails(requiredModuleName);
-                            responserequiredModule.then(function (resultRequireModule) {
-                                if (resultRequireModule[0] == "GET") {
-                                    if (resultRequireModule[1] == 1) {
-                                        requiredModuleDisplayNames.push([resultRequireModule[2].display, resultRequireModule[2].uuid]);
-                                    } else {
-                                        requiredModuleDisplayNames.push([capitalizeTxt(requiredModuleName.toString().replace(".", " ")), requiredModuleName]);
-                                        logger.error("Could not get module information for - " + requiredModuleName, resultRequireModule[2]);
-                                    }
-                                } else {
-                                    requiredModuleDisplayNames.push([capitalizeTxt(requiredModuleName.toString().replace(".", " ")), requiredModuleName]);
-                                }
-                                $scope.moduleViewRequiredModules = {
-                                    "requiredModules": requiredModuleDisplayNames
-                                }
-                            });
-                        });
-
-                        $scope.getDependentModuleListonCurrentModule(data.packageName);
-
-                        hideLoadingPopUp();
-                    }).error(function (data) { // GET REQUEST ERROR HANDLE
-                    $scope.requestModuleViewDetails = false;
-                    hideLoadingPopUp();
-                    logger.error("Could not get module view details", data);
                 });
             }
 
@@ -560,7 +578,8 @@ manageModuleController.controller('ModuleListCtrl',
                     if (responseType == "GET") {
                         if (responseValue == 1) {
                             $scope.requestAllModuleDetails = true;
-                            $scope.AllModuleViewData = responseData.results;
+                            moduleListResults = orderModuleInformationByaAphabet(responseData.results);
+                            $scope.AllModuleViewData = moduleListResults;
                         }
                         else {
                             $scope.requestAllModuleDetails = false;
@@ -570,6 +589,30 @@ manageModuleController.controller('ModuleListCtrl',
                 });
             }
 
+            function compareStrings(a, b) {
+                a = a.toLowerCase();
+                b = b.toLowerCase();
+                return (a < b) ? -1 : (a > b) ? 1 : 0;
+              }
+
+            function orderModuleInformationByaAphabet(modulesData) {
+                OrderedModuleDisplay = []
+                for(var i=0; i<modulesData.length; i++) {
+                    tmp = {};
+                    tmp["display"] = modulesData[i].display;
+                    tmp["index"] = i;
+                    OrderedModuleDisplay.push(tmp);
+                };
+                OrderedModuleDisplay.sort(function(a, b) {
+                    return compareStrings(a.display, b.display);
+                });
+                results = [];
+                for(var i=0; i<OrderedModuleDisplay.length; i++) {
+                    index = OrderedModuleDisplay[i].index;
+                    results.push(modulesData[index])
+                };
+                return results;
+            }
 
             $scope.checkAllModulesForUpdate = function () {
 
@@ -588,8 +631,8 @@ manageModuleController.controller('ModuleListCtrl',
                     if (resultModule[0] == "GET") {
                         if (resultModule[1] == 1) {
                             responseModuleDetailsData = resultModule[2].results; //data.results
+                            count = 0;
                             angular.forEach(responseModuleDetailsData, function (Modulevalue, Modulekey) {
-
                                 var moduleCurrentVeriosn = Modulevalue.version;
                                 var responseUpdate = ModuleService.checkModuleUpdate(Modulevalue.packageName);
                                 responseUpdate.then(function (resultUpdate) {
@@ -618,15 +661,20 @@ manageModuleController.controller('ModuleListCtrl',
                                             $scope.checkUpdateForAllModuleError = "Could not get some the module update details."
                                             logger.error("Modulevalue.packageName : " + Modulevalue.packageName, resultUpdate[1]);
                                         }
-
-                                        hideLoadingPopUp();
+                                        count++;
+                                        if(count>=responseModuleDetailsData.length) {
+                                            hideLoadingPopUp();
+                                        }
                                     }
                                     else {
                                         // error in retrive Module update details
                                         if (count >= responseModuleDetailsData.length) {
                                             $scope.searchingForUpdate = false;
                                         }
-                                        hideLoadingPopUp();
+                                        count++;
+                                        if(count>=responseModuleDetailsData.length) {
+                                            hideLoadingPopUp();
+                                        }
                                         $scope.updateErrorModules.push(Modulevalue.name);
                                         $scope.checkUpdateForAllModuleError = "Could not get some the module update details."
                                         logger.error("Modulevalue.packageName : " + Modulevalue.packageName, resultUpdate[1]);
